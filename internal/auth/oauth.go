@@ -14,7 +14,7 @@ import (
 // GitHubClientID is the OAuth App client id embedded at release time. Until
 // the app is registered it is empty and `st auth` explains the fallback. The
 // CLI lets STITCH_GITHUB_CLIENT_ID override it.
-var GitHubClientID = ""
+var GitHubClientID = "Ov23liuJYyC4oTvRr5Uk"
 
 // Endpoint and clock seams; tests override these.
 var (

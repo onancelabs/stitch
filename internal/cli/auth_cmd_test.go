@@ -5,12 +5,19 @@ import (
 	"testing"
 
 	keyring "github.com/zalando/go-keyring"
+
+	"github.com/onancelabs/stitch/internal/auth"
 )
 
 // Without a client id configured, plain `st auth` must fail with actionable
 // guidance instead of silently prompting for a paste like the old default.
+// (A real client id ships embedded in auth.GitHubClientID; blank it here so
+// the test never reaches the network.)
 func TestAuthWithoutClientIDExplains(t *testing.T) {
 	keyring.MockInit()
+	old := auth.GitHubClientID
+	auth.GitHubClientID = ""
+	t.Cleanup(func() { auth.GitHubClientID = old })
 	t.Setenv("STITCH_GITHUB_CLIENT_ID", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")

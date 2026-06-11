@@ -13,7 +13,13 @@ Big changes review better as a series of small, dependent branches — one revie
 
 ## Install
 
-Requires Go 1.21+ and git.
+Homebrew (macOS):
+
+```sh
+brew install --cask onancelabs/tap/stitch
+```
+
+Or with Go 1.21+:
 
 ```sh
 go install github.com/onancelabs/stitch/cmd/st@latest
@@ -23,6 +29,8 @@ sudo mv st /usr/local/bin/       # put it on your PATH
 # or, with the Makefile:
 make build && sudo mv st /usr/local/bin/
 ```
+
+git is required at runtime either way. Pre-built binaries for macOS, Linux, and Windows are also attached to each [GitHub release](https://github.com/onancelabs/stitch/releases).
 
 Shell completions come for free via cobra — e.g. `st completion zsh`.
 
@@ -169,6 +177,8 @@ make dist            # cross-compile dist/st-<os>-<arch> for macOS, Linux, Windo
 go build -ldflags "-X main.version=1.2.3" -o st ./cmd/st   # version injection
 ```
 
+Releases are automated: pushing a `vX.Y.Z` tag runs GoReleaser via GitHub Actions, which builds the binaries, attaches them to a GitHub release, and updates the Homebrew tap ([`onancelabs/homebrew-tap`](https://github.com/onancelabs/homebrew-tap)).
+
 The restack engine is exercised end-to-end against real git (tree-shaped stacks, conflict-then-continue, moved trunks). The `submit`/`sync` orchestration is tested offline against a fake forge plus a local bare origin, and the OAuth device flow against a fake GitHub server. The only untested paths are the real GitHub API round-trips behind the `Forge` interface.
 
 Dependencies are three small, well-known libraries: [`cobra`](https://github.com/spf13/cobra)/[`pflag`](https://github.com/spf13/pflag) (CLI), [`go-github`](https://github.com/google/go-github) (PR API), and [`go-keyring`](https://github.com/zalando/go-keyring) (token storage). Everything else is the standard library.
@@ -180,3 +190,7 @@ More forges behind the `Forge` interface (GitLab, Bitbucket); reviewer/label/tit
 ## Acknowledgements
 
 Stacked-branch workflows have a healthy ecosystem of tools — [Graphite](https://graphite.dev), [ghstack](https://github.com/ezyang/ghstack), [git-spr](https://github.com/ejoffe/spr), [av](https://github.com/aviator-co/av), [git-branchless](https://github.com/arxanas/git-branchless), and others — each with its own take. Stitch is an independent, from-scratch implementation of the workflow, built to stay small: plain git underneath, local-only state, one binary.
+
+## License
+
+[Business Source License 1.1](LICENSE). In short: you can use Stitch freely — personally and inside your organization, commercial or not — and read and modify the source. What you can't do is offer Stitch itself to third parties as a commercial product or service. Each version converts to the Apache 2.0 license four years after its release. For other arrangements, see the contact in the LICENSE file.
