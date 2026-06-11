@@ -50,6 +50,10 @@ homebrew_casks:
     directory: Casks
     homepage: https://github.com/onancelabs/stitch
     description: "Stacked branches and stacked pull requests on top of plain git"
+    # The cask installs the `st` binary; without this GoReleaser defaults the
+    # binary stanza to the cask name ("stitch"), which isn't in the archive.
+    binaries:
+      - st
     commit_author:
       name: onancelabs-release-bot
       email: davidolubusoye@gmail.com

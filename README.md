@@ -16,7 +16,7 @@ Big changes review better as a series of small, dependent branches — one revie
 Homebrew (macOS):
 
 ```sh
-brew install --cask onancelabs/tap/stitch
+brew install onancelabs/tap/stitch
 ```
 
 Or with Go 1.21+:
