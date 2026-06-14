@@ -17,6 +17,7 @@ type BranchMeta struct {
 	Parent    string `json:"parent"`    // parent branch name
 	ParentRev string `json:"parentRev"` // parent tip this branch was last based on (the rebase "old base")
 	PR        int    `json:"pr,omitempty"`
+	PRState   string `json:"prState,omitempty"` // last seen PR state: draft|open|closed|merged
 }
 
 func metaRef(branch string) string { return "refs/stitch/" + branch }

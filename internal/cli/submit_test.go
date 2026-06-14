@@ -58,6 +58,9 @@ func TestSubmitStack(t *testing.T) {
 	if m1.PR != 101 || m2.PR != 102 {
 		t.Errorf("PR numbers not recorded: b1=%d b2=%d", m1.PR, m2.PR)
 	}
+	if m1.PRState != "draft" || m2.PRState != "draft" {
+		t.Errorf("PR states not recorded: b1=%q b2=%q", m1.PRState, m2.PRState)
+	}
 
 	// Stack map: every PR body updated, entries top-of-stack first, current marked.
 	if len(fk.bodies) != 2 {
@@ -73,5 +76,53 @@ func TestSubmitStack(t *testing.T) {
 	runSt(t, "submit", "--no-open")
 	if got := fk.ensures[len(fk.ensures)-1].knownPR; got != 102 {
 		t.Errorf("resubmit should pass the known PR number, got %d", got)
+	}
+}
+
+func TestSubmitTitleAndBodyFromFirstCommit(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	setupRepoWithOrigin(t)
+	fk := installFakeForge(t)
+
+	writeFile(t, "f1.txt", "1\n")
+	runSt(t, "create", "b1")
+	mustGit(t, "add", "-A")
+	mustGit(t, "commit", "-qm", "Add API", "-m", "Detailed description.")
+	writeFile(t, "f1.txt", "1+\n")
+	mustGit(t, "commit", "-aqm", "fix tests")
+
+	runSt(t, "submit", "--no-open")
+
+	if fk.ensures[0].title != "Add API" {
+		t.Errorf("title should be the FIRST commit subject, got %q", fk.ensures[0].title)
+	}
+	if fk.ensures[0].body != "Detailed description." {
+		t.Errorf("body should be the first commit's message body, got %q", fk.ensures[0].body)
+	}
+}
+
+func TestSubmitTitleFlag(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	setupRepoWithOrigin(t)
+	fk := installFakeForge(t)
+
+	writeFile(t, "f1.txt", "1\n")
+	runSt(t, "create", "-a", "-m", "c1", "b1")
+	writeFile(t, "f2.txt", "2\n")
+	runSt(t, "create", "-a", "-m", "c2", "b2") // current branch
+
+	runSt(t, "submit", "--no-open", "--title", "Custom title")
+	if fk.ensures[0].title != "c1" || fk.ensures[1].title != "Custom title" {
+		t.Errorf("--title should hit only the current branch's PR: %+v", fk.ensures)
+	}
+	if len(fk.retitles) != 0 {
+		t.Errorf("fresh creation should not retitle, got %+v", fk.retitles)
+	}
+
+	runSt(t, "submit", "--no-open", "--title", "Renamed")
+	if len(fk.retitles) != 1 || fk.retitles[0].num != 102 || fk.retitles[0].title != "Renamed" {
+		t.Errorf("resubmit with --title should retitle the current PR: %+v", fk.retitles)
 	}
 }

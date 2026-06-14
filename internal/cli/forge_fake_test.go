@@ -7,9 +7,14 @@ import (
 )
 
 type ensureCall struct {
-	branch, base, title string
-	draft               bool
-	knownPR             int
+	branch, base, title, body string
+	draft                     bool
+	knownPR                   int
+}
+
+type retitleCall struct {
+	num   int
+	title string
 }
 
 type bodyCall struct {
@@ -20,19 +25,20 @@ type bodyCall struct {
 
 // fakeForge records calls and assigns PR numbers 101, 102, ...
 type fakeForge struct {
-	ensures []ensureCall
-	bodies  []bodyCall
-	merged  map[int]bool
-	byHead  map[string]int
-	nextPR  int
+	ensures  []ensureCall
+	retitles []retitleCall
+	bodies   []bodyCall
+	states   map[int]string // PR number -> state served by PRState
+	byHead   map[string]int
+	nextPR   int
 }
 
 func newFakeForge() *fakeForge {
-	return &fakeForge{merged: map[int]bool{}, byHead: map[string]int{}, nextPR: 100}
+	return &fakeForge{states: map[int]string{}, byHead: map[string]int{}, nextPR: 100}
 }
 
-func (f *fakeForge) EnsurePR(branch, base, title string, draft bool, knownPR int) (int, string, error) {
-	f.ensures = append(f.ensures, ensureCall{branch, base, title, draft, knownPR})
+func (f *fakeForge) EnsurePR(branch, base, title, body string, draft bool, knownPR int) (int, string, string, error) {
+	f.ensures = append(f.ensures, ensureCall{branch, base, title, body, draft, knownPR})
 	num := knownPR
 	if num == 0 {
 		if n, ok := f.byHead[branch]; ok {
@@ -43,7 +49,19 @@ func (f *fakeForge) EnsurePR(branch, base, title string, draft bool, knownPR int
 			f.byHead[branch] = num
 		}
 	}
-	return num, fmt.Sprintf("https://example.test/pr/%d", num), nil
+	state := "open"
+	if draft {
+		state = "draft"
+	}
+	if s, ok := f.states[num]; ok {
+		state = s
+	}
+	return num, fmt.Sprintf("https://example.test/pr/%d", num), state, nil
+}
+
+func (f *fakeForge) SetPRTitle(num int, title string) error {
+	f.retitles = append(f.retitles, retitleCall{num, title})
+	return nil
 }
 
 func (f *fakeForge) UpdatePRBody(num int, entries []forge.StackEntry, current string) error {
@@ -51,7 +69,12 @@ func (f *fakeForge) UpdatePRBody(num int, entries []forge.StackEntry, current st
 	return nil
 }
 
-func (f *fakeForge) PRMerged(num int) (bool, error) { return f.merged[num], nil }
+func (f *fakeForge) PRState(num int) (string, error) {
+	if s, ok := f.states[num]; ok {
+		return s, nil
+	}
+	return "open", nil
+}
 
 // installFakeForge swaps the constructor hook for one test.
 func installFakeForge(t interface{ Cleanup(func()) }) *fakeForge {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,7 @@ import (
 
 func newSubmitCmd() *cobra.Command {
 	var ready, noOpen bool
+	var title string
 	cmd := &cobra.Command{
 		Use:     "submit",
 		Aliases: []string{"s"},
@@ -55,6 +57,9 @@ func newSubmitCmd() *cobra.Command {
 			if len(order) == 0 {
 				return fmt.Errorf("no tracked branches in the current stack; use 'st create' or 'st track'")
 			}
+			if title != "" && !slices.Contains(order, cur) {
+				return fmt.Errorf("--title applies to the current branch (%s), which has no PR in this submit", cur)
+			}
 			for _, b := range order {
 				if g.NeedsRestack(b) {
 					return fmt.Errorf("%s needs restacking; run 'st restack' first", b)
@@ -88,18 +93,26 @@ func newSubmitCmd() *cobra.Command {
 			prURL := map[string]string{}
 			for _, b := range order {
 				base := g.Meta[b].Parent
-				title := gitx.CommitSubject(b)
-				if title == "" {
-					title = b
+				t, body := gitx.FirstCommit(base, b)
+				if b == cur && title != "" {
+					t = title
 				}
-				num, url, err := f.EnsurePR(b, base, title, !ready, g.Meta[b].PR)
+				if t == "" {
+					t = b
+				}
+				hadPR := g.Meta[b].PR != 0
+				num, url, state, err := f.EnsurePR(b, base, t, body, !ready, g.Meta[b].PR)
 				if err != nil {
 					return fmt.Errorf("PR for %s failed: %v", b, err)
 				}
+				if b == cur && title != "" && hadPR {
+					if err := f.SetPRTitle(num, title); err != nil {
+						return fmt.Errorf("retitling PR #%d failed: %v", num, err)
+					}
+				}
 				prNum[b], prURL[b] = num, url
-				if g.Meta[b].PR != num {
-					m := g.Meta[b]
-					m.PR = num
+				if m := g.Meta[b]; m.PR != num || m.PRState != state {
+					m.PR, m.PRState = num, state
 					if err := stack.WriteMeta(b, m); err != nil {
 						return err
 					}
@@ -138,5 +151,6 @@ func newSubmitCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&ready, "ready", "r", false, "open PRs for review instead of as drafts")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "don't open the top PR in a browser")
+	cmd.Flags().StringVarP(&title, "title", "t", "", "title for the current branch's PR (created or retitled)")
 	return cmd
 }

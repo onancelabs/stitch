@@ -115,14 +115,19 @@ func cleanupMerged(f forge.Forge, trunk string) error {
 		if m.PR == 0 {
 			continue
 		}
-		ok, err := f.PRMerged(m.PR)
+		state, err := f.PRState(m.PR)
 		if err != nil {
 			continue // PR not found / transient: leave the branch alone
 		}
-		if ok {
+		if state == "merged" {
 			mergedSet[b] = true
 			prOf[b] = m.PR
 			merged = append(merged, b)
+		} else if state != m.PRState {
+			m.PRState = state // refresh the cache for surviving branches
+			if err := stack.WriteMeta(b, m); err != nil {
+				return err
+			}
 		}
 	}
 	if len(merged) == 0 {

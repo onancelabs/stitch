@@ -40,10 +40,10 @@ func TestRenderStackBody(t *testing.T) {
 	if !strings.HasPrefix(out, stackMarkerStart) || !strings.Contains(out, stackMarkerEnd) {
 		t.Error("empty body should be wrapped in the managed markers")
 	}
-	if !strings.Contains(out, "#11 add-api  ← this PR") {
+	if !strings.Contains(out, "#11 `add-api`  👈 this PR") {
 		t.Errorf("current PR not marked:\n%s", out)
 	}
-	if !strings.Contains(out, "#12 add-ui") || !strings.Contains(out, "#10 add-model") {
+	if !strings.Contains(out, "#12 `add-ui`") || !strings.Contains(out, "#10 `add-model`") {
 		t.Error("not all stack entries rendered")
 	}
 

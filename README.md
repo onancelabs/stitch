@@ -48,14 +48,14 @@ st create add-api   -a -m "Add API on top of model"
 echo "..." > c.txt
 st create add-ui    -a -m "Add UI on top of API"
 
-st log                           # see the stack
+st log                           # see the stack (PR status + ahead/behind once submitted)
 
 # fix something lower in the stack; everything above is rebased automatically
 st down                          # move toward trunk
 # ...edit files...
 st modify -am "fix"              # amends this branch, restacks its children
 
-st submit                        # push the stack, open a PR per branch
+st submit                        # push the stack, open a PR per branch ('st s' for short)
 st sync                          # later: drop merged branches, restack
 ```
 
@@ -75,9 +75,9 @@ The branch name in `create` may come before or after the flags — both `st crea
 | `down`                                    | `d`   | Check out the parent branch (toward trunk).                                                                                                   |
 | `track [-p <parent>]`                     |       | Start tracking the current (ordinary git) branch; parent defaults to trunk.                                                                   |
 | `untrack [<branch>] [--thread] [--all]`   |       | Stop tracking a branch (re-parenting children), the current thread (`--thread`), or every tracked branch (`--all`). Git branches stay intact. |
-| `log`                                     | `ls`  | Show the stack as a tree, top of stack first, flagging branches that need a restack.                                                          |
+| `log [--remote]`                          | `ls`  | Show the stack as a tree, top of stack first, with PR number/state, ahead/behind vs origin, and restack flags. `--remote` refreshes PR states from the code host. |
 | `sync [--no-fetch]`                       |       | Fetch, fast-forward trunk, delete merged branches (squash-merge aware), and restack the survivors.                                            |
-| `submit [-r/--ready]`                     | `s`   | Push the current stack and open/update one PR per branch (base = parent). Drafts by default; `-r` opens for review.                           |
+| `submit [-r/--ready] [--title <t>]`       | `s`   | Push the current stack and open/update one PR per branch (base = parent). Titles/descriptions come from each branch's first commit; `--title` overrides for the current branch. Drafts by default; `-r` opens for review. |
 | `auth [--token \| --status \| --logout]`  |       | Sign in to GitHub via the OAuth device flow (default), or store a PAT with `--token`; kept in the OS keychain.                                |
 
 Run `st <command> -h` for per-command flags. Any command not in this table is forwarded straight to git with the same arguments and exit code.
@@ -130,15 +130,18 @@ Then, from any branch in your stack:
 
 ```sh
 st submit               # draft PRs;  st submit -r  opens them for review
+st s --no-open          # same, short form, without opening the browser
 ```
 
 For each branch in the current stack, bottom-up, `submit`:
 
 1. pushes it with `--force-with-lease` (restacks rewrite history, so a plain push would be rejected; the lease keeps the force push safe);
-2. opens or updates a PR whose **base is the branch's parent** — so each PR shows only its own diff — recording the PR number in the branch metadata;
+2. opens or updates a PR whose **base is the branch's parent** — so each PR shows only its own diff — recording the PR number in the branch metadata. New PRs are titled and described from the branch's **first commit** (the one that started the change); `st submit --title <t>` overrides the title for the current branch's PR, retitling it if it already exists;
 3. writes a stack map into each PR description, inside a managed block so re-submitting updates it instead of piling on comments.
 
-When it finishes, `st submit` opens the top PR in your browser (pass `--no-open` to skip).
+You can edit PR descriptions freely: on update, stitch only ever rewrites the content between its `<!-- stitch:start -->` and `<!-- stitch:end -->` markers and preserves everything outside them (if the markers are deleted, the block is simply re-appended at the end).
+
+When it finishes, `st submit` opens the top PR in your browser (pass `--no-open` to skip). PR numbers and states land in `st log`, so you rarely need `gh pr list`.
 
 After PRs merge, `st sync` asks GitHub the state of each one. Merged PRs — **including squash merges, which `git branch --merged` cannot detect** — have their local branch deleted and their children re-parented onto the nearest surviving ancestor before the stack restacks. With no token available, `sync` still does the local half (fetch, fast-forward trunk, restack).
 

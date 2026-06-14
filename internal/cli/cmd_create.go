@@ -16,7 +16,13 @@ func newCreateCmd() *cobra.Command {
 		Use:     "create <branch>",
 		Aliases: []string{"c"},
 		Short:   "Create a new branch stacked on the current one",
-		Args:    cobra.ExactArgs(1),
+		Long: `Create a new branch stacked on the current one.
+
+Any uncommitted changes you're carrying come along to the new branch, exactly
+as with plain 'git checkout -b'; staged changes are then committed to it
+(-a stages everything first). With nothing staged, the branch is created with
+no commit yet.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if err := gitx.ValidBranchName(name); err != nil {

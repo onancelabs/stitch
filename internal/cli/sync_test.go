@@ -21,7 +21,7 @@ func TestSyncCleansUpMergedBranch(t *testing.T) {
 	runSt(t, "create", "-a", "-m", "c2", "b2")
 	runSt(t, "submit", "--no-open") // assigns PRs 101 (b1), 102 (b2)
 
-	fk.merged[101] = true // pretend b1's PR got squash-merged
+	fk.states[101] = "merged" // pretend b1's PR got squash-merged
 	mustGit(t, "checkout", "main")
 	runSt(t, "sync", "--no-fetch")
 

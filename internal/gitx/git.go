@@ -94,8 +94,36 @@ func HasStaged() bool {
 	return !OK("diff", "--cached", "--quiet")
 }
 
-// CommitSubject returns the subject line of a branch's most recent commit.
-func CommitSubject(branch string) string {
-	s, _ := Run("log", "-1", "--format=%s", branch)
-	return s
+// FirstCommit returns the subject and body of the oldest commit on branch
+// that is not on parent — the commit that started the change. Both are empty
+// when the branch has no commits of its own.
+func FirstCommit(parent, branch string) (subject, body string) {
+	shas, err := Run("rev-list", "--reverse", parent+".."+branch)
+	if err != nil || shas == "" {
+		return "", ""
+	}
+	first := strings.SplitN(shas, "\n", 2)[0]
+	full, err := Run("log", "-1", "--format=%B", first)
+	if err != nil {
+		return "", ""
+	}
+	parts := strings.SplitN(full, "\n", 2)
+	subject = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		body = strings.TrimSpace(parts[1])
+	}
+	return subject, body
+}
+
+// AheadBehind returns how many commits branch has that upstream lacks (ahead)
+// and how many upstream has that branch lacks (behind).
+func AheadBehind(upstream, branch string) (ahead, behind int, err error) {
+	out, err := Run("rev-list", "--left-right", "--count", upstream+"..."+branch)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, err := fmt.Sscanf(out, "%d %d", &behind, &ahead); err != nil {
+		return 0, 0, fmt.Errorf("unexpected rev-list output %q", out)
+	}
+	return ahead, behind, nil
 }
