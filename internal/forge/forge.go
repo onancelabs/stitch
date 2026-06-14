@@ -10,8 +10,13 @@ type Forge interface {
 	EnsurePR(branch, base, title, body string, draft bool, knownPR int) (num int, url, state string, err error)
 	// SetPRTitle replaces the PR's title.
 	SetPRTitle(num int, title string) error
-	// UpdatePRBody writes the managed stack map into the PR body.
-	UpdatePRBody(num int, entries []StackEntry, current string) error
+	// UpsertStackComment creates or edits the stitch-managed stack comment on a
+	// PR. It prefers knownID, falls back to adopting an existing marked comment,
+	// then creates one. Returns the live comment ID.
+	UpsertStackComment(num int, knownID int64, body string) (id int64, err error)
+	// StripStackBody removes a legacy stitch block from the PR description (a
+	// one-time migration); it is a no-op when no block is present.
+	StripStackBody(num int) error
 	// PRState reports the PR's state: "draft", "open", "closed", or "merged"
 	// (squash-aware, unlike `git branch --merged`).
 	PRState(num int) (string, error)

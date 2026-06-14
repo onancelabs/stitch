@@ -125,8 +125,22 @@ func newSubmitCmd() *cobra.Command {
 				entries = append(entries, forge.StackEntry{Branch: order[i], PR: prNum[order[i]]})
 			}
 			for _, b := range order {
-				if err := f.UpdatePRBody(prNum[b], entries, b); err != nil {
-					return fmt.Errorf("updating PR #%d failed: %v", prNum[b], err)
+				block := forge.RenderStackComment(entries, b, trunk)
+				hadComment := g.Meta[b].StackComment != 0
+				id, err := f.UpsertStackComment(prNum[b], g.Meta[b].StackComment, block)
+				if err != nil {
+					return fmt.Errorf("stack comment for PR #%d failed: %v", prNum[b], err)
+				}
+				if m := g.Meta[b]; m.StackComment != id {
+					m.StackComment = id
+					if err := stack.WriteMeta(b, m); err != nil {
+						return err
+					}
+				}
+				if !hadComment {
+					if err := f.StripStackBody(prNum[b]); err != nil {
+						return fmt.Errorf("clearing old stack block in PR #%d failed: %v", prNum[b], err)
+					}
 				}
 			}
 

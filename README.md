@@ -137,9 +137,9 @@ For each branch in the current stack, bottom-up, `submit`:
 
 1. pushes it with `--force-with-lease` (restacks rewrite history, so a plain push would be rejected; the lease keeps the force push safe);
 2. opens or updates a PR whose **base is the branch's parent** — so each PR shows only its own diff — recording the PR number in the branch metadata. New PRs are titled and described from the branch's **first commit** (the one that started the change); `st submit --title <t>` overrides the title for the current branch's PR, retitling it if it already exists;
-3. writes a stack map into each PR description, inside a managed block so re-submitting updates it instead of piling on comments.
+3. posts a **stitch-managed comment** on each PR with the thread map (the stack of PRs, current one marked), editing it in place on every submit so it never piles up. The comment is authored by your own GitHub account — it notifies reviewers once when first created, and later updates are silent.
 
-You can edit PR descriptions freely: on update, stitch only ever rewrites the content between its `<!-- stitch:start -->` and `<!-- stitch:end -->` markers and preserves everything outside them (if the markers are deleted, the block is simply re-appended at the end).
+Your PR description is entirely yours — stitch no longer writes into it (and on the first submit after upgrading, it removes any stack block it had previously added there). The thread map lives in the managed comment, which stitch only ever rewrites between its `<!-- stitch:start -->` and `<!-- stitch:end -->` markers.
 
 When it finishes, `st submit` opens the top PR in your browser (pass `--no-open` to skip). PR numbers and states land in `st log`, so you rarely need `gh pr list`.
 

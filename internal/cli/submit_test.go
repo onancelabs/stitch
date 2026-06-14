@@ -62,20 +62,46 @@ func TestSubmitStack(t *testing.T) {
 		t.Errorf("PR states not recorded: b1=%q b2=%q", m1.PRState, m2.PRState)
 	}
 
-	// Stack map: every PR body updated, entries top-of-stack first, current marked.
-	if len(fk.bodies) != 2 {
-		t.Fatalf("want 2 body updates, got %d", len(fk.bodies))
+	// Each PR gets a stitch-managed comment listing entries top-first, marking itself.
+	if got := fk.comments[101]; !strings.Contains(got, "#102 `b2`") || !strings.Contains(got, "#101 `b1`  👈 this PR") {
+		t.Errorf("b1's comment wrong:\n%s", got)
 	}
-	for _, bc := range fk.bodies {
-		if len(bc.entries) != 2 || bc.entries[0].Branch != "b2" || bc.entries[1].Branch != "b1" {
-			t.Errorf("entries should list top first: %+v", bc.entries)
-		}
+	if got := fk.comments[102]; !strings.Contains(got, "#102 `b2`  👈 this PR") {
+		t.Errorf("b2's comment should mark itself:\n%s", got)
 	}
+	id1, id2 := fk.commentID[101], fk.commentID[102]
 
 	// Resubmit is idempotent: same PR numbers via knownPR.
 	runSt(t, "submit", "--no-open")
 	if got := fk.ensures[len(fk.ensures)-1].knownPR; got != 102 {
 		t.Errorf("resubmit should pass the known PR number, got %d", got)
+	}
+	// ...and the same comments are edited, not recreated.
+	if fk.commentID[101] != id1 || fk.commentID[102] != id2 {
+		t.Error("resubmit should reuse the same comment IDs")
+	}
+	if fk.commentCreate[101] != 1 || fk.commentCreate[102] != 1 {
+		t.Errorf("resubmit must not create duplicate comments: %+v", fk.commentCreate)
+	}
+}
+
+func TestSubmitStripsLegacyBodyOnce(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	setupRepoWithOrigin(t)
+	fk := installFakeForge(t)
+
+	writeFile(t, "f1.txt", "1\n")
+	runSt(t, "create", "-a", "-m", "c1", "b1")
+
+	runSt(t, "submit", "--no-open") // first submit: no cached comment yet
+	if len(fk.stripped) != 1 || fk.stripped[0] != 101 {
+		t.Fatalf("first submit should strip the legacy body once: %+v", fk.stripped)
+	}
+
+	runSt(t, "submit", "--no-open") // comment ID now cached
+	if len(fk.stripped) != 1 {
+		t.Errorf("resubmit must not strip again (comment cached): %+v", fk.stripped)
 	}
 }
 

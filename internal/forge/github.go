@@ -84,10 +84,49 @@ func (c *Client) SetPRTitle(num int, title string) error {
 	return err
 }
 
-// UpdatePRBody writes the stack map into a PR's body, replacing any existing
-// managed block, and only issues an edit when the body actually changes.
-func (c *Client) UpdatePRBody(num int, entries []StackEntry, current string) error {
-	return updateStackBody(c.gh, c.Owner, c.Repo, num, entries, current)
+// UpsertStackComment creates or edits the stitch-managed stack comment.
+func (c *Client) UpsertStackComment(num int, knownID int64, body string) (int64, error) {
+	ctx := context.Background()
+	if knownID != 0 {
+		edited, _, err := c.gh.Issues.EditComment(ctx, c.Owner, c.Repo, knownID, &github.IssueComment{Body: sp(body)})
+		if err == nil {
+			return edited.GetID(), nil
+		}
+		// Fall through (comment was deleted, or the ID belongs elsewhere).
+	}
+	comments, _, err := c.gh.Issues.ListComments(ctx, c.Owner, c.Repo, num, &github.IssueListCommentsOptions{})
+	if err != nil {
+		return 0, err
+	}
+	for _, cm := range comments {
+		if strings.Contains(cm.GetBody(), stackMarkerStart) {
+			edited, _, err := c.gh.Issues.EditComment(ctx, c.Owner, c.Repo, cm.GetID(), &github.IssueComment{Body: sp(body)})
+			if err != nil {
+				return 0, err
+			}
+			return edited.GetID(), nil
+		}
+	}
+	created, _, err := c.gh.Issues.CreateComment(ctx, c.Owner, c.Repo, num, &github.IssueComment{Body: sp(body)})
+	if err != nil {
+		return 0, err
+	}
+	return created.GetID(), nil
+}
+
+// StripStackBody removes a legacy stitch block from the PR description.
+func (c *Client) StripStackBody(num int) error {
+	ctx := context.Background()
+	p, _, err := c.gh.PullRequests.Get(ctx, c.Owner, c.Repo, num)
+	if err != nil {
+		return err
+	}
+	cleaned, changed := stripStackBlock(p.GetBody())
+	if !changed {
+		return nil
+	}
+	_, _, err = c.gh.PullRequests.Edit(ctx, c.Owner, c.Repo, num, &github.PullRequest{Body: sp(cleaned)})
+	return err
 }
 
 // PRState reports the PR's state ("draft", "open", "closed", "merged" — the
@@ -157,49 +196,47 @@ func ensurePR(client ghClient, owner, repo, branch, base, title, body string, dr
 	return pr.GetNumber(), pr.GetHTMLURL(), prStateOf(pr), nil
 }
 
-func updateStackBody(client ghClient, owner, repo string, num int, entries []StackEntry, current string) error {
-	ctx := context.Background()
-	p, _, err := client.PullRequests.Get(ctx, owner, repo, num)
-	if err != nil {
-		return err
-	}
-	nb := RenderStackBody(p.GetBody(), entries, current)
-	if nb == p.GetBody() {
-		return nil
-	}
-	_, _, err = client.PullRequests.Edit(ctx, owner, repo, num, &github.PullRequest{Body: sp(nb)})
-	return err
-}
-
 const (
 	stackMarkerStart = "<!-- stitch:start -->"
 	stackMarkerEnd   = "<!-- stitch:end -->"
 )
 
-// RenderStackBody returns existing with the stitch-managed block inserted or
-// replaced. entries are listed top of stack first. This is pure and unit tested.
-func RenderStackBody(existing string, entries []StackEntry, current string) string {
+// RenderStackComment returns the full body of the stitch-managed stack comment
+// for one PR: a thread-branded GitHub note callout, the PR list (top of stack
+// first) with the current PR marked, a trunk row, and a footer — wrapped in the
+// managed markers. Pure and unit tested.
+func RenderStackComment(entries []StackEntry, current, trunk string) string {
 	var b strings.Builder
 	b.WriteString(stackMarkerStart + "\n")
-	b.WriteString("**Stack** (top to bottom, managed by stitch):\n")
+	b.WriteString("> [!NOTE]\n")
+	b.WriteString("> 🧵 **Stitch thread** — stacked PRs, top to bottom\n\n")
 	for _, e := range entries {
 		line := fmt.Sprintf("- #%d `%s`", e.PR, e.Branch)
 		if e.Branch == current {
 			line += "  👈 this PR"
 		}
-		b.WriteString(line)
-		b.WriteString("\n")
+		b.WriteString(line + "\n")
 	}
+	if trunk != "" {
+		b.WriteString(fmt.Sprintf("- `%s`\n", trunk))
+	}
+	b.WriteString("\n---\n")
+	b.WriteString("Managed by [stitch](https://github.com/onancelabs/stitch) · [Learn about threads](https://github.com/onancelabs/stitch#readme)\n")
 	b.WriteString(stackMarkerEnd)
-	block := b.String()
+	return b.String()
+}
 
-	if i := strings.Index(existing, stackMarkerStart); i >= 0 {
-		if j := strings.Index(existing, stackMarkerEnd); j > i {
-			return existing[:i] + block + existing[j+len(stackMarkerEnd):]
-		}
+// stripStackBlock returns existing with the stitch-managed marker block removed
+// and surrounding blank lines tidied. changed is false when no block is present.
+func stripStackBlock(existing string) (string, bool) {
+	i := strings.Index(existing, stackMarkerStart)
+	if i < 0 {
+		return existing, false
 	}
-	if strings.TrimSpace(existing) == "" {
-		return block + "\n"
+	j := strings.Index(existing, stackMarkerEnd)
+	if j < i {
+		return existing, false
 	}
-	return existing + "\n\n" + block + "\n"
+	cleaned := existing[:i] + existing[j+len(stackMarkerEnd):]
+	return strings.TrimSpace(cleaned), true
 }

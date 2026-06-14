@@ -14,10 +14,11 @@ import (
 // blob pointed to by the ref refs/stitch/<branch>, which is durable (survives
 // gc), invisible to the working tree, and never treated as a real branch.
 type BranchMeta struct {
-	Parent    string `json:"parent"`    // parent branch name
-	ParentRev string `json:"parentRev"` // parent tip this branch was last based on (the rebase "old base")
-	PR        int    `json:"pr,omitempty"`
-	PRState   string `json:"prState,omitempty"` // last seen PR state: draft|open|closed|merged
+	Parent       string `json:"parent"`    // parent branch name
+	ParentRev    string `json:"parentRev"` // parent tip this branch was last based on (the rebase "old base")
+	PR           int    `json:"pr,omitempty"`
+	PRState      string `json:"prState,omitempty"`      // last seen PR state: draft|open|closed|merged
+	StackComment int64  `json:"stackComment,omitempty"` // id of the managed stack comment
 }
 
 func metaRef(branch string) string { return "refs/stitch/" + branch }

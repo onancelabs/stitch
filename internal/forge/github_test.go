@@ -32,37 +32,46 @@ func TestParseRemote(t *testing.T) {
 	}
 }
 
-func TestRenderStackBody(t *testing.T) {
+func TestRenderStackComment(t *testing.T) {
 	entries := []StackEntry{{"add-ui", 12}, {"add-api", 11}, {"add-model", 10}}
+	out := RenderStackComment(entries, "add-api", "main")
 
-	// Empty body: a fresh managed block.
-	out := RenderStackBody("", entries, "add-api")
 	if !strings.HasPrefix(out, stackMarkerStart) || !strings.Contains(out, stackMarkerEnd) {
-		t.Error("empty body should be wrapped in the managed markers")
+		t.Error("comment should be wrapped in the managed markers")
+	}
+	if !strings.Contains(out, "[!NOTE]") || !strings.Contains(out, "🧵 **Stitch thread**") {
+		t.Errorf("missing the thread callout header:\n%s", out)
 	}
 	if !strings.Contains(out, "#11 `add-api`  👈 this PR") {
 		t.Errorf("current PR not marked:\n%s", out)
 	}
-	if !strings.Contains(out, "#12 `add-ui`") || !strings.Contains(out, "#10 `add-model`") {
-		t.Error("not all stack entries rendered")
+	if strings.Contains(out, "#12 `add-ui`  👈") || strings.Contains(out, "#10 `add-model`  👈") {
+		t.Errorf("only the current PR should be marked:\n%s", out)
+	}
+	if !strings.Contains(out, "- `main`") {
+		t.Errorf("trunk row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "Managed by [stitch](https://github.com/onancelabs/stitch)") {
+		t.Errorf("footer missing:\n%s", out)
+	}
+}
+
+func TestStripStackBlock(t *testing.T) {
+	body := "Intro paragraph.\n\n" + stackMarkerStart + "\nOLD STACK\n" + stackMarkerEnd + "\n\nFooter."
+	cleaned, changed := stripStackBlock(body)
+	if !changed {
+		t.Fatal("a body containing the block should report changed=true")
+	}
+	if strings.Contains(cleaned, "OLD STACK") || strings.Contains(cleaned, stackMarkerStart) {
+		t.Errorf("block not removed:\n%s", cleaned)
+	}
+	if !strings.Contains(cleaned, "Intro paragraph.") || !strings.Contains(cleaned, "Footer.") {
+		t.Errorf("surrounding text should be preserved:\n%s", cleaned)
 	}
 
-	// Existing managed block is replaced; surrounding text is preserved.
-	existing := "Intro paragraph.\n" + stackMarkerStart + "\nOLD CONTENT\n" + stackMarkerEnd + "\nFooter."
-	out = RenderStackBody(existing, entries, "add-ui")
-	if !strings.Contains(out, "Intro paragraph.") || !strings.Contains(out, "Footer.") {
-		t.Error("surrounding text should be preserved")
-	}
-	if strings.Contains(out, "OLD CONTENT") {
-		t.Error("stale managed block should be replaced")
-	}
-	if strings.Count(out, stackMarkerStart) != 1 {
-		t.Error("should not duplicate the managed block")
-	}
-
-	// No markers and non-empty: block is appended after existing text.
-	out = RenderStackBody("Hello", entries, "add-ui")
-	if strings.Index(out, "Hello") > strings.Index(out, stackMarkerStart) {
-		t.Error("existing text should come before the appended block")
+	plain := "Just a description, no block."
+	out, changed := stripStackBlock(plain)
+	if changed || out != plain {
+		t.Errorf("a body without the block should be unchanged, got changed=%v %q", changed, out)
 	}
 }

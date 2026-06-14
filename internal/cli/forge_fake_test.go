@@ -17,24 +17,29 @@ type retitleCall struct {
 	title string
 }
 
-type bodyCall struct {
-	num     int
-	entries []forge.StackEntry
-	current string
-}
-
 // fakeForge records calls and assigns PR numbers 101, 102, ...
 type fakeForge struct {
-	ensures  []ensureCall
-	retitles []retitleCall
-	bodies   []bodyCall
-	states   map[int]string // PR number -> state served by PRState
-	byHead   map[string]int
-	nextPR   int
+	ensures       []ensureCall
+	retitles      []retitleCall
+	comments      map[int]string // PR num -> last rendered comment body
+	commentID     map[int]int64  // PR num -> assigned comment ID
+	commentCreate map[int]int    // PR num -> number of creates (should stay 1)
+	stripped      []int          // PR nums StripStackBody was called on
+	states        map[int]string // PR number -> state served by PRState
+	byHead        map[string]int
+	nextPR        int
+	nextComment   int64
 }
 
 func newFakeForge() *fakeForge {
-	return &fakeForge{states: map[int]string{}, byHead: map[string]int{}, nextPR: 100}
+	return &fakeForge{
+		comments:      map[int]string{},
+		commentID:     map[int]int64{},
+		commentCreate: map[int]int{},
+		states:        map[int]string{},
+		byHead:        map[string]int{},
+		nextPR:        100,
+	}
 }
 
 func (f *fakeForge) EnsurePR(branch, base, title, body string, draft bool, knownPR int) (int, string, string, error) {
@@ -64,8 +69,20 @@ func (f *fakeForge) SetPRTitle(num int, title string) error {
 	return nil
 }
 
-func (f *fakeForge) UpdatePRBody(num int, entries []forge.StackEntry, current string) error {
-	f.bodies = append(f.bodies, bodyCall{num, entries, current})
+func (f *fakeForge) UpsertStackComment(num int, knownID int64, body string) (int64, error) {
+	f.comments[num] = body
+	if id, ok := f.commentID[num]; ok {
+		return id, nil // edit existing
+	}
+	f.nextComment++
+	id := 5000 + f.nextComment
+	f.commentID[num] = id
+	f.commentCreate[num]++
+	return id, nil
+}
+
+func (f *fakeForge) StripStackBody(num int) error {
+	f.stripped = append(f.stripped, num)
 	return nil
 }
 
