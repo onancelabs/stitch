@@ -104,6 +104,36 @@ func BuildPlan(g *Graph, targets map[string]bool, returnBranch string) *State {
 	return &State{Ops: ops, Return: returnBranch}
 }
 
+// runOp replays one op: rebase its branch onto the parent's current tip and
+// record the new base. persistBeforeRebase, if non-nil, is invoked after
+// NewBase is set but before the rebase runs, so a resumable caller can
+// checkpoint. Returns conflicted=true with the rebase left in progress if the
+// replay stopped on a conflict; the caller decides whether to pause or abort.
+func runOp(o *Op, persistBeforeRebase func() error) (conflicted bool, err error) {
+	newBase, err := gitx.RevParse(o.Parent)
+	if err != nil {
+		return false, err
+	}
+	if newBase == o.OldBase {
+		// Parent hasn't moved relative to the stored base: nothing to replay.
+		return false, finalize(o.Branch, o.OldBase)
+	}
+	fmt.Printf("Restacking %s onto %s...\n", o.Branch, o.Parent)
+	o.NewBase = newBase
+	if persistBeforeRebase != nil {
+		if err := persistBeforeRebase(); err != nil {
+			return false, err
+		}
+	}
+	if rerr := gitx.RunIO("rebase", "--onto", newBase, o.OldBase, o.Branch); rerr != nil {
+		if RebaseInProgress() {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to restack %s: %v", o.Branch, rerr)
+	}
+	return false, finalize(o.Branch, newBase)
+}
+
 // ExecuteRestack runs the plan, persisting progress before each risky step so a
 // conflict can be resumed. On conflict it returns a helpful error.
 func ExecuteRestack(s *State) error {
@@ -112,34 +142,12 @@ func ExecuteRestack(s *State) error {
 	}
 	for len(s.Ops) > 0 {
 		o := &s.Ops[0]
-		newBase, err := gitx.RevParse(o.Parent)
+		conflicted, err := runOp(o, func() error { return saveState(s) })
 		if err != nil {
 			return err
 		}
-		if newBase == o.OldBase {
-			// Parent hasn't moved relative to the stored base: nothing to replay.
-			if err := finalize(o.Branch, o.OldBase); err != nil {
-				return err
-			}
-			s.Ops = s.Ops[1:]
-			if err := saveState(s); err != nil {
-				return err
-			}
-			continue
-		}
-		fmt.Printf("Restacking %s onto %s...\n", o.Branch, o.Parent)
-		o.NewBase = newBase
-		if err := saveState(s); err != nil { // persist NewBase before the rebase
-			return err
-		}
-		if rerr := gitx.RunIO("rebase", "--onto", newBase, o.OldBase, o.Branch); rerr != nil {
-			if RebaseInProgress() {
-				return conflictError(o.Branch)
-			}
-			return fmt.Errorf("failed to restack %s: %v", o.Branch, rerr)
-		}
-		if err := finalize(o.Branch, newBase); err != nil {
-			return err
+		if conflicted {
+			return conflictError(o.Branch)
 		}
 		s.Ops = s.Ops[1:]
 		if err := saveState(s); err != nil {
@@ -205,6 +213,40 @@ func ContinueRestack() error {
 	}
 	s.Ops = s.Ops[1:]
 	return ExecuteRestack(s)
+}
+
+// StackFailure records a stack that sync skipped because restacking one of its
+// branches hit a conflict. The branch's rebase was aborted; the stack was left
+// untouched for the user to resolve later.
+type StackFailure struct {
+	Base   string // the stack's base branch (its topmost tracked ancestor)
+	Branch string // the branch whose rebase conflicted
+}
+
+// RestackStacksIsolated restacks each stack independently for `st sync`. Stacks
+// are processed in order; within a stack, ops run in topological order. If a
+// branch conflicts, its rebase is aborted, the stack is recorded as failed, and
+// processing continues with the next stack. Branches that restacked cleanly
+// before the conflict keep their progress. It never leaves a paused rebase or
+// persisted restack state. A non-conflict replay error propagates immediately.
+func RestackStacksIsolated(stacks []Stack) ([]StackFailure, error) {
+	var failures []StackFailure
+	for _, st := range stacks {
+		for i := range st.Ops {
+			conflicted, err := runOp(&st.Ops[i], nil)
+			if err != nil {
+				return failures, err
+			}
+			if conflicted {
+				if aerr := gitx.RunIO("rebase", "--abort"); aerr != nil {
+					fmt.Printf("Note: could not abort rebase for %s: %v\n", st.Ops[i].Branch, aerr)
+				}
+				failures = append(failures, StackFailure{Base: st.Base, Branch: st.Ops[i].Branch})
+				break
+			}
+		}
+	}
+	return failures, nil
 }
 
 // AbortRestack cancels an in-progress restack and returns to the start branch.

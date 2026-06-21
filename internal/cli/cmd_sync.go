@@ -89,15 +89,39 @@ func newSyncCmd() *cobra.Command {
 				fmt.Println("No tracked branches to restack.")
 				return nil
 			}
-			targets := map[string]bool{}
-			for _, b := range g.Order {
-				targets[b] = true
+			// Restack every stack (trunk moved, so all are stale), but isolate
+			// conflicts: other stacks skip-and-report, the current stack pauses.
+			others, currentOps := g.PartitionForSync(cur)
+			failures, err := stack.RestackStacksIsolated(others)
+			if err != nil {
+				return err
 			}
-			return stack.ExecuteRestack(stack.BuildPlan(g, targets, cur))
+			if len(failures) > 0 {
+				reportSkippedStacks(failures)
+			}
+			if len(currentOps) == 0 {
+				// On trunk / untracked: nothing to pause on. Return to start.
+				if cur != "" {
+					_, _ = gitx.Run("checkout", cur)
+				}
+				return nil
+			}
+			return stack.ExecuteRestack(&stack.State{Ops: currentOps, Return: cur})
 		},
 	}
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "skip git fetch")
 	return cmd
+}
+
+// reportSkippedStacks prints the stacks sync left untouched because they
+// conflicted. They are not the current stack, so they never blocked the sync;
+// the user resolves each by checking it out and running 'st restack'.
+func reportSkippedStacks(failures []stack.StackFailure) {
+	fmt.Printf("\n%d stack(s) skipped due to conflicts (your other stacks weren't changed):\n", len(failures))
+	for _, f := range failures {
+		fmt.Printf("  %s\tconflict on %s\t→ `git checkout %s && st restack`\n", f.Base, f.Branch, f.Branch)
+	}
+	fmt.Println()
 }
 
 // cleanupMerged asks the forge which tracked branches have merged PRs

@@ -135,3 +135,49 @@ func (g *Graph) NeedsRestack(branch string) bool {
 	}
 	return tip != m.ParentRev
 }
+
+// Stack is one stack's restack work: its base branch (topmost tracked ancestor)
+// and the ops to replay, in topological order (parents before children).
+type Stack struct {
+	Base string
+	Ops  []Op
+}
+
+// StackBase returns the topmost tracked ancestor of branch — the branch whose
+// parent is trunk or an untracked root. It is the identity of the stack that
+// branch belongs to. Returns "" when branch is not tracked.
+func (g *Graph) StackBase(branch string) string {
+	anc := g.Ancestors(branch)
+	if len(anc) == 0 {
+		return ""
+	}
+	return anc[len(anc)-1]
+}
+
+// PartitionForSync splits the tracked branches into the stack containing cur and
+// all other stacks. currentOps holds the cur stack's ops in topological order;
+// others holds each remaining stack (in first-seen, i.e. topological, order).
+// When cur is trunk or untracked there is no current stack: currentOps is nil
+// and every stack appears in others.
+func (g *Graph) PartitionForSync(cur string) (others []Stack, currentOps []Op) {
+	currentBase := g.StackBase(cur)
+	byBase := map[string][]Op{}
+	var order []string
+	for _, b := range g.Order {
+		m := g.Meta[b]
+		op := Op{Branch: b, Parent: m.Parent, OldBase: m.ParentRev}
+		base := g.StackBase(b)
+		if currentBase != "" && base == currentBase {
+			currentOps = append(currentOps, op)
+			continue
+		}
+		if _, seen := byBase[base]; !seen {
+			order = append(order, base)
+		}
+		byBase[base] = append(byBase[base], op)
+	}
+	for _, base := range order {
+		others = append(others, Stack{Base: base, Ops: byBase[base]})
+	}
+	return others, currentOps
+}
